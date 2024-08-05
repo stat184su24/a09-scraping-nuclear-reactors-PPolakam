@@ -6,36 +6,96 @@ output: html_notebook
 
 ```{r}
 library(tidyverse)
-
+library(rvest)
 ```
 
 ## Scrape the Data 
 
 ```{r}
-#My code here.... 
+page <- "https://en.wikipedia.org/wiki/List_of_commercial_nuclear_reactors"
 
+tableList <- 
+  page |>
+  read_html() |>
+  html_nodes(css = "table") |>
+  html_table(fill = TRUE)
+
+japanReactors <- tableList[[21]]
+japanReactors
 
 ```
 
 
 ## Your turn: In what ways is the table tidy? How is it not tidy? What’s different about it from a tidy table?
 
-My answer here..... 
+This table can be considered tidy in that each variable has its own column and each row is its own observation. However, a possible cause of "untidy-ness" in this table could be the repetition in the data. It seems like some variables contain repeating information (for example, reactors of type `BWR` seem to have the token `BWR` appended to `Model`). If this is considered repeating data, then the principle that each cell must only host an atomic value (or rather that each value must be contained within a single cell) is violated, making it distinguishable from a tidy version of the same table.
 
 
 ## Your Turn: Plot Net Generation Capacity vs Construction Date
 
 ```{r}
-#my code here 
+oldJapanReactors <- japanReactors
 
+names(japanReactors)[c(3,7)] <- c("type", "grossMW")
 
+japanReactors <-
+  japanReactors |>
+  filter(row_number() > 1) |>
+  rename(name = Plantname, 
+         reactor = `UnitNo.`,
+         model = Model,
+         status = Status, 
+         netMW = `Capacity(MW)`,
+         construction = `grossMW`,
+         operation = `Commercialoperation`, 
+         closure = Closed)
+
+japanReactors <- 
+  japanReactors |>
+  mutate(construction = dmy(construction), operation = dmy(operation))
+  
+
+ggplot(japanReactors) +
+  geom_point(mapping = aes(x = construction, y = netMW, color = type)) +
+  labs(
+    x = "Start Date",
+    y = "Capacity"
+  ) +
+  theme_minimal()
 ```
-
+The general trend appears to be that the capacity increases with time (Capacity and Start Date are positively corelated), with BWR and PWR performing equally until around the 2000s, where BWR appears to be the clear winner. The other two types only have one data point each on the graph, so it's difficult to truly compare their capacities with those of the other 2 types.
 
 ## Your Turn: Scrape & Clean China Data (then merge with Japan)
 
 ```{r}
-#my code here... 
+japanReactors <- 
+  japanReactors |>
+  mutate(country = "Japan", reactor = as.character(reactor))
+
+chinaReactors <- tableList[[10]] |>
+  mutate(country = "China")
+
+names(chinaReactors)[c(3,7)] <- c("type", "grossMW")
+
+chinaReactors <-
+  chinaReactors |>
+  filter(row_number() > 1 | !is.na(grossMW) | !is.na(Commercialoperation)) |>
+  rename(name = Plantname, 
+         reactor = `UnitNo.`,
+         model = Model,
+         status = Status, 
+         netMW = `Capacity(MW)`,
+         construction = `grossMW`,
+         operation = `Commercialoperation`, 
+         closure = Closed)
+
+chinaReactors <- 
+  chinaReactors |>
+  mutate(construction = dmy(construction), operation = dmy(operation)) |>
+  filter(!is.na(construction) | !is.na(operation))
+
+japanReactors |> 
+  bind_rows(chinaReactors, id = NULL)
 
 ```
 
@@ -44,6 +104,14 @@ My answer here.....
 ## Your Turn: Reconstruct Info Graphic of Japan Reactors (or other country of interest)
 
 ```{r}
-#My code here
+japanReactors |>
+  mutate(id = paste(name, " ", reactor)) |>
+  ggplot() +
+  geom_segment(mapping = aes(x = operation, xend = construction, y = id, yend = id, color = type))
+  
+japanReactors |>
+  mutate(id = paste(name, " ", reactor), diff = as.numeric(operation - construction)) |>
+  ggplot() +
+  geom_segment(mapping = aes(x = 0, xend = diff, y = id, yend = id))
 
 ```
